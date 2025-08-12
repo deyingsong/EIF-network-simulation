@@ -7,25 +7,25 @@ These are the source codes for the neural dynamics simulations described in this
 ## Table of Contents
 - [High-Performance EIF Neural Network Simulation](#high-herformance-eif-neural-network-simulation)
   - [Table of Contents](#table-of-contents)
-  - [🚀 Performance Highlights](#🚀-performance-highlights)
-  - [📁 Repository Structure](#📁-repository-structure)
-  - [⚡ Key Features](#⚡-key-features)
+  - [🚀 Performance Highlights](#-performance-highlights)
+  - [📁 Repository Structure](#-repository-structure)
+  - [⚡ Key Features](#-key-features)
     - [Simulation Variants](#simulation-variants)
     - [Performance Optimizations](#performance-optimizations)
     - [Numerical Stability](#numerical-stability)
-  - [🔧 Compilation & Usage](#🔧-compilation--usage)
+  - [🔧 Compilation & Usage](#-compilation--usage)
     - [Prerequisites](#prerequisites)
     - [Quick Start](#quick-start)
     - [Performance Benchmarking](#performance-benchmarking)
-  - [📊 Performance Characteristics](#📊-performance-characteristics)
-  - [🎯 Applications](#🎯-applications)
-  - [📚 Implementation Details](#📚-implementation-details)
+  - [📊 Performance Characteristics](#-performance-characteristics)
+  - [🎯 Applications](#-applications)
+  - [📚 Implementation Details](#-implementation-details)
     - [Synaptic Dynamics](#synaptic-dynamics)
     - [Membrane Dynamics](#membrane-dynamics)
     - [Connectivity Encoding](#connectivity-encoding)
-  - [📄 License](#📄-license)
-  - [🤝 Contributing](#🤝-contributing)
-  - [📖 Citation](#📖-citation)
+  - [📄 License](#-license)
+  - [🤝 Contributing](#-contributing)
+  - [📖 Citation](#-citation)
 
 
 ## 🚀 Performance Highlights
@@ -126,11 +126,8 @@ run_benchmark('CurrentNoise', 10000, 1000);  % 10k neurons, 1s simulation
 
 ### Synaptic Dynamics
 The simulation uses dual-exponential synaptic currents:
-$$
-\tau_d \frac{dI}{dt} = -I+ I^\prime,
-\tau_r \frac{dI^\prime}{dt} = -I^\prime + I_{\text{input}}
-$$
-Precomputed as: $a_1=\frac{1}{\tau_r}+\frac{1}{\tau_d}$, $a_2=\frac{1}{\tau_r \tau_d}$ 
+$\tau_d \frac{dI}{dt} = -I + I',\quad \tau_r \frac{dI'}{dt} = -I' + I_{\text{input}}$.
+Precomputed as: $a_1=\frac{1}{\tau_r}+\frac{1}{\tau_d},\; a_2=\frac{1}{\tau_r \tau_d}$.
 
 ### Membrane Dynamics
 Exponential integrate-and-fire model:
