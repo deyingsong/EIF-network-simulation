@@ -131,9 +131,11 @@ Precomputed as: $a_1=\frac{1}{\tau_r}+\frac{1}{\tau_d},\; a_2=\frac{1}{\tau_r \t
 
 ### Membrane Dynamics
 Exponential integrate-and-fire model:
-$$
-C \frac{dV}{dt} = -g_L (V - V_L) + g_L \Delta_T e^{(V - V_T)/\Delta_T} + I
-$$
+<div align="center">
+
+$C \frac{dV}{dt} = -g_L (V - V_L) + g_L \Delta_T e^{\frac{V - V_T}{\Delta_T}} + I$
+
+</div>
 
 ### Connectivity Encoding
 Efficient sparse connectivity using index arrays:
