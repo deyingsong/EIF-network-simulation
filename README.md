@@ -1,6 +1,6 @@
 # High-Performance EIF Neural Network Simulation
 
-A collection of optimized MATLAB MEX implementations for simulating large-scale Exponential Integrate-and-Fire (EIF) neural networks with various connectivity patterns and input modalities. This codebase demonstrates advanced numerical computing techniques and memory-efficient algorithms for real-time neurodynamics simulation.
+A collection of optimized C implementations for simulating large-scale Exponential Integrate-and-Fire (EIF) neural networks with various connectivity patterns and input modalities. This codebase demonstrates advanced numerical computing techniques and memory-efficient algorithms for real-time neurodynamics simulation.
 
 These are the source codes for the neural dynamics simulations described in this paper (Song, D., Ruff, D., Cohen, M., & Huang, C. (2024). Neuronal heterogeneity of normalization strength in a circuit model. bioRxiv.).
 
