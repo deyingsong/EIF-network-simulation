@@ -1,143 +1,108 @@
-function compile_all()
-% COMPILE_ALL - Compile all EIF simulation MEX files
+function compile_all(varargin)
+% compile_all  Build all normalization MEX files for the current platform.
 %
-% This script compiles all variants of the EIF neural network simulation
-% with optimized settings for maximum performance.
+% Folder layout assumed:
+%   build/compile_all.m
+%   src/common/EIF_common.c, EIF_common.h
+%   src/variants/EIF_normalization_*.c
 %
-% Usage:
-%   compile_all()
-%
-% Requirements:
-%   - MATLAB R2021b or later
-%   - Configured MEX compiler (run 'mex -setup' if needed)
-%
-% Performance Notes:
-%   - Uses -O optimization for release builds
-%   - Includes debug symbols in debug mode
-%   - Links against optimized BLAS/LAPACK when available
+% Behavior:
+%   - Automatically detects whether a variant includes "EIF_common.h".
+%     If yes, it compiles & links with src/common/EIF_common.c and adds -Isrc/common.
+%   - Treats EIF_normalization_Default.c as self‑contained (no common files).
+%   - Produces one MEX per variant with the same base name as the .c file.
 
-fprintf('=== EIF Neural Simulation MEX Compiler ===\n\n');
+clc;
 
-% Configuration
-src_dir = '../src';
-common_dir = fullfile(src_dir, 'common');
-variants_dir = fullfile(src_dir, 'variants');
+thisDir     = fileparts(mfilename('fullpath'));
+root        = fileparts(thisDir);
+commonDir   = fullfile(root,'src','common');
+variantsDir = fullfile(root,'src','variants');
 
-% Check if source directories exist
-if ~exist(src_dir, 'dir')
-    error('Source directory not found: %s', src_dir);
-end
+% ---- variants (update here if you add more files) -----------------------
+variants = { ...
+    'EIF_normalization_BroadWeight' ...
+    'EIF_normalization_CurrentGaussianNoise' ...
+    'EIF_normalization_CurrentNoise' ...
+    'EIF_normalization_CurrentNoise_BroadWeight' ...
+    'EIF_normalization_MatchInDegree' ...
+    'EIF_normalization_Default' ...
+};
 
-% MEX compilation flags
-debug_mode = false; % Set to true for debugging
-if debug_mode
-    mex_flags = {'-g', '-DEIF_DEBUG=1'};
-    fprintf('Compiling in DEBUG mode...\n');
+% ---- platform/compiler flags -------------------------------------------
+mexArgsCommon = {};
+if ispc
+    % MSVC
+    mexArgsCommon = {'-largeArrayDims', 'COMPFLAGS=$COMPFLAGS /O2'};
+elseif ismac
+    % Clang
+    mexArgsCommon = {'-largeArrayDims', 'CFLAGS=$CFLAGS -O3 -std=c11'};
 else
-    mex_flags = {'-O', '-DEIF_DEBUG=0', '-DNDEBUG'};
-    fprintf('Compiling in RELEASE mode...\n');
+    % GCC/Clang on Linux
+    mexArgsCommon = {'-largeArrayDims', 'CFLAGS=$CFLAGS -O3 -std=c11'};
 end
 
-% Common source files
-common_files = {
-    fullfile(common_dir, 'EIF_common.c')
-};
+% Optional: allow passing extra flags from command line, e.g. compile_all('-v')
+mexArgsCommon = [mexArgsCommon, varargin];
 
-% Variant source files
-variant_files = {
-    'EIF_normalization_BroadWeight.c', 
-    'EIF_normalization_CurrentNoise.c',
-    'EIF_normalization_CurrentGaussianNoise.c',
-    'EIF_normalization_CurrentNoise_BroadWeight.c',
-    'EIF_normalization_MatchInDegree.c'
-};
+fprintf('Building MEX files...\n');
+fprintf('Root:      %s\n', root);
+fprintf('Common:    %s\n', commonDir);
+fprintf('Variants:  %s\n\n', variantsDir);
 
-% Include directories
-include_dirs = ['-I', common_dir];
+built = {};
+failed = {};
 
-% Compile each variant
-success_count = 0;
-total_count = length(variant_files);
+for k = 1:numel(variants)
+    name   = variants{k};
+    srcC   = fullfile(variantsDir, [name '.c']);
+    output = name;
 
-for i = 1:length(variant_files)
-    variant_file = variant_files{i};
-    variant_path = fullfile(variants_dir, variant_file);
-    
-    if ~exist(variant_path, 'file')
-        fprintf('⚠️  Warning: %s not found, skipping...\n', variant_file);
+    if ~exist(srcC, 'file')
+        warning('Skipping %s (source not found: %s)', name, srcC);
+        failed{end+1} = name; %#ok<AGROW>
         continue;
     end
-    
-    fprintf('📦 Compiling %s... ', variant_file);
-    tic;
-    
+
+    % Heuristic: detect whether this variant uses the shared common code.
+    % We *always* treat Default as standalone per your note.
+    usesCommon = ~strcmpi(name, 'EIF_normalization_Default');
     try
-        % Build MEX command
-        mex_cmd = [mex_flags, include_dirs, {variant_path}, common_files];
-        
-        % Execute MEX compilation
-        mex(mex_cmd{:});
-        
-        compile_time = toc;
-        success_count = success_count + 1;
-        fprintf('✅ Success (%.2fs)\n', compile_time);
-        
-    catch ME
-        compile_time = toc;
-        fprintf('❌ Failed (%.2fs)\n', compile_time);
-        fprintf('   Error: %s\n', ME.message);
+        txt = fileread(srcC);
+        if ~contains(txt, 'EIF_common.h')
+            usesCommon = false;
+        end
+    catch
+        % If fileread fails, fall back to the filename rule above
     end
-end
 
-fprintf('\n=== Compilation Summary ===\n');
-fprintf('Successfully compiled: %d/%d variants\n', success_count, total_count);
-
-if success_count == total_count
-    fprintf('🎉 All variants compiled successfully!\n');
-    
-    % Display compiled MEX files
-    fprintf('\nCompiled MEX files:\n');
-    mex_files = dir('*.mex*');
-    for i = 1:length(mex_files)
-        file_info = dir(mex_files(i).name);
-        file_size_mb = file_info.bytes / (1024*1024);
-        fprintf('  %s (%.1f MB)\n', mex_files(i).name, file_size_mb);
-    end
-    
-    % Run quick validation
-    fprintf('\n🔍 Running quick validation...\n');
+    % Build the mex command
     try
-        run_validation_tests();
-        fprintf('✅ Validation passed!\n');
+        if usesCommon
+            fprintf('> %s (with common)\n', name);
+            mex(mexArgsCommon{:}, ...
+                ['-I' commonDir], ...
+                fullfile(commonDir, 'EIF_common.c'), ...
+                srcC, ...
+                '-output', output);
+        else
+            fprintf('> %s (standalone)\n', name);
+            mex(mexArgsCommon{:}, ...
+                srcC, ...
+                '-output', output);
+        end
+        built{end+1} = name; %#ok<AGROW>
     catch ME
-        fprintf('⚠️  Validation warning: %s\n', ME.message);
+        failed{end+1} = name; %#ok<AGROW>
+        fprintf(2, '  FAILED: %s\n  %s\n\n', name, ME.message);
     end
-    
-else
-    fprintf('⚠️  Some variants failed to compile. Check error messages above.\n');
 end
 
-fprintf('\n=== Ready to simulate! ===\n');
-fprintf('Example usage:\n');
-fprintf('  params = setup_default_params();\n');
-fprintf('  [spikes, Isyn, V] = EIF_normalization_Default(sx, Wrf, Wrr, params);\n\n');
-
+fprintf('\n=== Summary ===\n');
+fprintf('Built:  %s\n', strjoin(built, ', '));
+if ~isempty(failed)
+    fprintf(2, 'Failed: %s\n', strjoin(failed, ', '));
 end
+fprintf('Done.\n');
 
-function run_validation_tests()
-% Quick validation to ensure MEX files work correctly
-    
-    % Check if any MEX file exists
-    mex_files = dir('EIF_normalization_*.mex*');
-    if isempty(mex_files)
-        error('No compiled MEX files found');
-    end
-    
-    % Test basic function availability
-    [~, func_name] = fileparts(mex_files(1).name);
-    if exist(func_name, 'file') ~= 3  % 3 = MEX file
-        error('MEX file not properly registered: %s', func_name);
-    end
-    
-    fprintf('Basic MEX functionality verified.\n');
 end
