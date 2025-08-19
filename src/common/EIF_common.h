@@ -1,139 +1,141 @@
-//
-//  EIF_common.h – common helpers for EIF MEX simulations
-//
+
+// EIF_common.h
+// Shared utilities for Exponential Integrate-and-Fire (EIF) MEX simulations
+// Style aligned with EIF_normalization_default.c
 #ifndef EIF_COMMON_H
 #define EIF_COMMON_H
 
-/* ---------- System / MATLAB includes ---------- */
 #include "mex.h"
 #include "matrix.h"
-#include <math.h>
 #include <stdint.h>
-#include <stdlib.h>
+#include <math.h>
 #include <string.h>
-#include <time.h>
 
-/* ---------- Build metadata ---------- */
-#ifndef EIF_COMMON_VERSION
-#define EIF_COMMON_VERSION "1.0.0"
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-/* ---------- Compile-time toggles ---------- */
-#ifndef EIF_DEBUG
-#define EIF_DEBUG 0
+#ifndef DEBUG
+#define DEBUG 0
 #endif
 
-/* ---------- Numeric guards ---------- */
-#ifndef EIF_MIN_DT
-#define EIF_MIN_DT 1e-8
-#endif
-
-#ifndef EIF_MAX_DT
-#define EIF_MAX_DT 1.0
-#endif
-
-#ifndef EIF_MAX_T
-#define EIF_MAX_T 1e7
-#endif
-
-/* ---------- Convenience macros ---------- */
-#if EIF_DEBUG
-#  define DBG(...) mexPrintf("[DBG] " __VA_ARGS__)
+#if DEBUG
+#define DEBUG_PRINT(fmt, ...) mexPrintf("[DEBUG] " fmt "\n", ##__VA_ARGS__)
 #else
-#  define DBG(...) do {} while(0)
+#define DEBUG_PRINT(fmt, ...)
 #endif
 
-#define STR2(x) #x
-#define STR(x) STR2(x)
+#define ERROR_CHECK(cond, msg) do { if(!(cond)) mexErrMsgTxt("ERROR: " msg); } while(0)
 
-#define FAIL(msg) mexErrMsgIdAndTxt("EIF:Error", "%s", (msg))
-#define FAIL_IF(cond, msg) do { if (cond) mexErrMsgIdAndTxt("EIF:Error", "%s", (msg)); } while(0)
+typedef enum {
+    EXCITATORY = 0,
+    INHIBITORY = 1,
+    NUM_POPULATIONS = 2
+} PopulationType;
 
-#define REQUIRE(cond, what) do { if(!(cond)) mexErrMsgIdAndTxt("EIF:Missing", "Missing or invalid: %s", (what)); } while(0)
+typedef enum {
+    SYNAPSE_FEEDFORWARD = 0,
+    SYNAPSE_EXCITATORY = 1,
+    SYNAPSE_INHIBITORY = 2,
+    NUM_SYNAPSE_TYPES = 3
+} SynapseType;
 
-#define SAFE_MALLOC(ptr, n, type)                                                     \
-    do {                                                                              \
-        (ptr) = (type*)mxMalloc((mwSize)(n) * (mwSize)sizeof(type));                  \
-        if(!(ptr)) mexErrMsgIdAndTxt("EIF:OOM", "Out of memory for " #ptr);           \
-    } while(0)
-
-#define SAFE_CALLOC(ptr, n, type)                                                     \
-    do {                                                                              \
-        (ptr) = (type*)mxCalloc((mwSize)(n), (mwSize)sizeof(type));                   \
-        if(!(ptr)) mexErrMsgIdAndTxt("EIF:OOM", "Out of memory for " #ptr);           \
-    } while(0)
-
-#define SAFE_FREE(ptr) do { if(ptr){ mxFree(ptr); (ptr)=NULL; } } while(0)
-
-/* ---------- Types shared by all variants ---------- */
-
-/* Populations (if you use them across files) */
-typedef enum { EXCITATORY = 0, INHIBITORY = 1, NUM_POP = 2 } Population;
-
-/* Network-wide parameters commonly needed by all variants.
-   Keep this minimal; extend in your variant .c files if needed. */
 typedef struct {
-    /* Counts (optional but commonly used) */
-    int32_t Ne, Ni, Nx;      /* sizes of populations */
-    int32_t N;               /* Ne + Ni (derived if not provided) */
+    // Counts
+    int32_t Ne, Ni, Nx;
+    int32_t Ne1, Ni1, Nx1;
 
-    /* Simulation controls */
-    double  T;               /* total time (ms or s; your convention) */
-    double  dt;              /* time step */
-    int32_t maxns;           /* spike buffer cap (optional) */
+    // Base strengths (used when not using broad weights)
+    double Jex, Jix, Jex1, Jix1;
+    double Jee, Jie, Jei, Jii;
 
-    /* Misc flags */
-    int32_t attarea;         /* optional attention-area flag */
+    // Fanouts
+    int32_t Kex, Kix;
+    int32_t Kee, Kie, Kei, Kii;
+
+    // Neuron params
+    double C[NUM_POPULATIONS];
+    double gl[NUM_POPULATIONS];
+    double Vleak[NUM_POPULATIONS];
+    double DeltaT[NUM_POPULATIONS];
+    double VT[NUM_POPULATIONS];
+    double tref[NUM_POPULATIONS];
+    double Vth[NUM_POPULATIONS];
+    double Vre[NUM_POPULATIONS];
+    double Vlb[NUM_POPULATIONS];
+
+    // Sim params
+    double T, dt;
+    int32_t maxns;
+    int32_t attarea;
+
+    // Optional extras
+    // Noise (Box-Muller) with sigma per population common scalar (original uses one sigma)
+    double sigma_current;
+    int use_current_noise; // 1 if using per-timestep noise
+
+    // Gaussian input current (baseline + time series)
+    double me_current, mi_current;
+    const double* L_current; // length Nt1 (user provides); used as L_current[floor(i*dt)]
+    int use_gaussian_input; // 1 if using me/mi + L_current
+
+    // Broad weights (per-connection)
+    const double* Jrf; // length == num entries of Wrf
+    const double* Jrr; // length == num entries of Wrr
+    int use_broad_weights; // 1 if using Jrf/Jrr arrays
 } NetworkParams;
 
-/* ---------- Fast math ---------- */
-/* Exponential with overflow/underflow clamps to avoid NaNs in inner loops. */
-static inline double eif_fast_exp(double x) {
-    if (x > 700.0) return INFINITY;
-    if (x < -700.0) return 0.0;
-    return exp(x);
+typedef struct {
+    int32_t Nsyntype;
+    const double* taursyn; // 3 x Nsyntype
+    const double* taudsyn; // 3 x Nsyntype
+    const double* Psyn;    // 3 x Nsyntype
+
+    // Active synapses (Psyn > 0) flattened
+    int32_t Nsyn;
+    int32_t* syntype;  // length <= 3*Nsyntype; entries in {0,1,2}
+    double* Psyn2;     // same length
+    double* temp1;     // same length: 1/tau_d + 1/tau_r
+    double* temp2;     // same length: 1/(tau_d * tau_r)
+} SynapseParams;
+
+// Memory helpers
+void* eif_safe_malloc(size_t sz, const char* ctx);
+
+// Extractors (fill defaults if fields missing)
+void eif_extract_network_params(const mxArray* params_struct, NetworkParams* p);
+void eif_extract_synapse_params(const mxArray* params_struct, SynapseParams* sp);
+void eif_free_synapse_params(SynapseParams* sp);
+
+// Attention
+void eif_init_attention(const NetworkParams* p, double* attyne, double* attyni);
+
+// Validation
+void eif_validate_spike_data(const double* sx, int32_t Nsx, int32_t Nx);
+void eif_validate_connectivity(const int32_t* W, int32_t Nw, int32_t N);
+
+// Core simulation (variant-agnostic).
+// - Wrf and Wrr are 1-based index arrays from MATLAB, column vectors.
+// - Output arrays must be pre-allocated by the caller: s(2 x maxns), Isynrecord(Nrec*rec_cols x Nt), vr(Nrec x Nt)
+// - rec_cols is Nsyn (or Nsyn+1 for noise variants); if rec_cols > Nsyn, extra columns will be left as zeros by core.
+void eif_simulate_core(
+    // inputs
+    const double* sx, int32_t Nsx,
+    const int32_t* Wrf, int32_t Nwrf,
+    const int32_t* Wrr, int32_t Nwrr,
+    const NetworkParams* P,
+    const SynapseParams* S,
+    const double* V0,
+    const double* Irecord, int32_t Nrecord,
+    int32_t rec_cols,
+    // outputs
+    double* spikes_out,          // 2 x P->maxns
+    double* Isynrecord_out,      // Nrecord*rec_cols x Nt
+    double* Vrecord_out          // Nrecord x Nt
+);
+
+#ifdef __cplusplus
 }
+#endif
 
-/* ---------- RNG helpers (simple, reproducible when seeded) ---------- */
-void eif_seed(uint64_t seed);
-double eif_rand_uniform(void);                 /* in (0,1) */
-double eif_rand_normal(void);                  /* mean 0, std 1 (Box–Muller) */
-
-/* ---------- MATLAB / mxArray helpers ---------- */
-const mxArray* eif_require_field(const mxArray* S, const char* name);
-const mxArray* eif_get_field(const mxArray* S, const char* name); /* may return NULL */
-
-double  eif_get_scalar_double(const mxArray* A, const char* what);
-int32_t eif_get_scalar_int32 (const mxArray* A, const char* what);
-
-double  eif_get_field_double_req(const mxArray* S, const char* name);
-double  eif_get_field_double_opt(const mxArray* S, const char* name, double defv);
-
-int32_t eif_get_field_int32_req (const mxArray* S, const char* name);
-int32_t eif_get_field_int32_opt (const mxArray* S, const char* name, int32_t defv);
-
-void    eif_require_type(const mxArray* A, mxClassID cls, const char* what);
-void    eif_require_vector(const mxArray* A, const char* what);
-void    eif_require_matrix(const mxArray* A, const char* what);
-void    eif_require_length_at_least(const mxArray* A, mwSize nmin, const char* what);
-void    eif_require_size(const mxArray* A, mwSize m, mwSize n, const char* what);
-
-/* Cast a MATLAB numeric array to a newly allocated int32* (column-major) */
-int32_t* eif_cast_to_int32_copy(const mxArray* A, const char* what);
-
-/* ---------- Parsing & validation (generic) ---------- */
-/* Parse a MATLAB struct of general network parameters.
-   Only a few fields are *required* to keep this generic across variants. */
-void parse_params(const mxArray* S, NetworkParams* P);
-
-/* Validate feedforward spikes or any time vector: monotone non-decreasing and within [0, T]. */
-void validate_time_vector(const double* t, mwSize nt, double T, const char* what);
-
-/* Validate that an index array (1-based for MATLAB) is in [1, Nmax]. */
-void validate_indices_1based(const int32_t* idx, mwSize n, int32_t Nmax, const char* what);
-
-/* Convenience: check connectivity pairs (i,j) in two equal-length int32 arrays. */
-void validate_edges_1based(const int32_t* pre, const int32_t* post, mwSize nEdges,
-                           int32_t Npre, int32_t Npost, const char* what);
-
-#endif /* EIF_COMMON_H */
+#endif // EIF_COMMON_H
